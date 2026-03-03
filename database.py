@@ -534,15 +534,27 @@ def init_db(db_path: str = None) -> Database:
     return get_database(db_path)
 
 
-def init_tag_library_to_db(db: Database = None):
-    """初始化标签库数据到数据库"""
+def init_tag_library_to_db(db: Database = None, force: bool = False):
+    """初始化标签库数据到数据库
+
+    Args:
+        db: 数据库实例
+        force: 是否强制重新初始化（清空旧数据）
+    """
     if db is None:
         db = get_database()
 
     # 检查是否已有数据
-    if db.count_tags() > 0:
+    if not force and db.count_tags() > 0:
         logger.info("标签库已有数据，跳过初始化")
         return
+
+    if force:
+        logger.info("强制重新初始化标签库...")
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tag_library")
+            conn.commit()
 
     logger.info("开始初始化标签库数据...")
 
@@ -556,7 +568,6 @@ def init_tag_library_to_db(db: Database = None):
         db.add_tag("style", "primary", style, sort_order=sort_order)
         sort_order += 1
 
-    # 导入二级风格
     for parent, children in TAG_LIBRARY["style"]["secondary"].items():
         for child in children:
             db.add_tag("style", "secondary", child, parent=parent, sort_order=sort_order)
@@ -598,23 +609,23 @@ def init_tag_library_to_db(db: Database = None):
             sort_order += 1
 
     # 导入特色附加标签
-    for intensity in TAG_LIBRARY["extra"]["intensity"]:
-        db.add_tag("extra", "intensity", intensity, sort_order=sort_order)
-        sort_order += 1
+    for key in ["intensity", "era", "feature"]:
+        if key in TAG_LIBRARY["extra"]:
+            for item in TAG_LIBRARY["extra"][key]:
+                db.add_tag("extra", key, item, sort_order=sort_order)
+                sort_order += 1
 
-    for era in TAG_LIBRARY["extra"]["era"]:
-        db.add_tag("extra", "era", era, sort_order=sort_order)
-        sort_order += 1
+    # 导入编曲配器混音特色标签
+    if "编曲配器混音" in TAG_LIBRARY["extra"]:
+        for item in TAG_LIBRARY["extra"]["编曲配器混音"]:
+            db.add_tag("extra", "编曲配器混音", item, sort_order=sort_order)
+            sort_order += 1
 
-    for feature in TAG_LIBRARY["extra"]["feature"]:
-        db.add_tag("extra", "feature", feature, sort_order=sort_order)
-        sort_order += 1
-
-    # 导入品质标签（固定）
+    # 导入品质标签（2026版标准）
     quality_tags = [
-        ("低等级", "基础合格，满足日常听歌需求。调性明确、节奏稳定、人声清晰（准确率≥85%）、配器简洁（2-3种乐器）、混音基础均衡"),
-        ("中等级", "细节打磨，具备创作质感。旋律有起伏、和声合理、节奏有层次、发音准确率≥95%、配器丰富（4-6种乐器）、混音细节优化"),
-        ("高等级", "专业质感，逼近商业作品。旋律创意强、和声复杂高级、节奏灵动、发音准确率100%、情感丰富、编曲精细、混音商业级"),
+        ("低品质", "基础合格，满足日常听歌需求。调性明确稳定、节奏精准稳定、人声清晰自然（准确率≥90%）、配器简洁（2-3种乐器）、混音基础均衡、押韵率≥70%"),
+        ("中品质", "细节打磨，具备专业创作质感。旋律有起伏对比、Hook记忆点突出、节奏有层次变化、发音准确率≥98%、配器丰富（4-6种乐器）、动态范围12-15dB、押韵率≥85%"),
+        ("高品质", "专业质感，逼近商业作品。旋律创意强、Hook高辨识度、和声复杂高级、发音准确率≥99%、配器精细创意、混音商业级标准（LUFS -14dB）、押韵率≥95%、高度原创艺术张力"),
     ]
     for name, desc in quality_tags:
         db.add_tag("quality", "primary", name, description=desc, sort_order=sort_order)

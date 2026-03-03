@@ -289,7 +289,7 @@ def render_tags_detail(file_info: Dict, tags: Dict):
         st.markdown("#### 📋 一级标签")
         # 显示品质标签
         quality = tags.get("quality", "-")
-        quality_emoji = {"低等级": "🟢", "中等级": "🟡", "高等级": "🔴"}.get(quality, "⚪")
+        quality_emoji = {"低品质": "🟢", "中品质": "🟡", "高品质": "🔴"}.get(quality, "⚪")
         st.markdown(f"**品质**: {quality_emoji} {quality}")
         # 显示品质评价理由
         if tags.get("quality_reason"):
@@ -358,13 +358,16 @@ def render_records_page():
     st.markdown(f"**共 {len(filtered_tags)} 条记录**")
 
     for record in filtered_tags[:100]:
-        with st.expander(f"✅ {record.get('file_name', 'Unknown')}"):
-            col1, col2 = st.columns(2)
+        audio_id = record.get("audio_id")
+        file_name = record.get("file_name", "Unknown")
+
+        with st.expander(f"✅ {file_name}"):
+            col1, col2, col3 = st.columns([2, 2, 1])
 
             with col1:
                 # 显示品质标签
                 quality = record.get("quality", "-")
-                quality_emoji = {"低等级": "🟢", "中等级": "🟡", "高等级": "🔴"}.get(quality, "⚪")
+                quality_emoji = {"低品质": "🟢", "中品质": "🟡", "高品质": "🔴"}.get(quality, "⚪")
                 st.markdown(f"**品质**: {quality_emoji} {quality}")
                 # 显示品质评价理由
                 if record.get("quality_reason"):
@@ -398,6 +401,13 @@ def render_records_page():
                     st.markdown(f"**BPM**: {record['bpm_estimate']}")
                 if record.get("brief_description"):
                     st.markdown(f"**描述**: {record['brief_description']}")
+
+            with col3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("🗑️ 删除", key=f"del_record_{audio_id}"):
+                    st.session_state.db.delete_audio_file(audio_id)
+                    st.success("已删除")
+                    st.rerun()
 
 
 def export_to_csv(records: List[Dict]):
@@ -771,16 +781,17 @@ def render_settings_page():
     stats = st.session_state.db.get_statistics()
     st.markdown(f"**总记录数**: {stats['total_files']} 条")
 
-    if st.button("🗑️ 清空所有数据", type="secondary"):
-        if st.checkbox("确认清空所有数据（不可恢复）"):
-            db = st.session_state.db
-            with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM tags")
-                cursor.execute("DELETE FROM audio_files")
-                conn.commit()
-            st.success("数据已清空")
-            st.rerun()
+    st.markdown("#### 清空所有数据")
+    confirm_clear = st.checkbox("确认清空所有数据（不可恢复）")
+    if st.button("🗑️ 清空所有数据", type="secondary", disabled=not confirm_clear):
+        db = st.session_state.db
+        with db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tags")
+            cursor.execute("DELETE FROM audio_files")
+            conn.commit()
+        st.success("数据已清空")
+        st.rerun()
 
 
 # ==================== 主函数 ====================
