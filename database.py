@@ -49,6 +49,10 @@ class Database:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     audio_id INTEGER REFERENCES audio_files(id),
 
+                    -- 品质标签
+                    quality TEXT,
+                    quality_reason TEXT,
+
                     -- 一级标签（必填）
                     style_primary TEXT,
                     emotion_primary TEXT,
@@ -77,6 +81,32 @@ class Database:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+
+            # 标签库表
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tag_library (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    category TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    parent TEXT,
+                    name TEXT NOT NULL,
+                    description TEXT,
+                    sort_order INTEGER DEFAULT 0,
+                    is_active INTEGER DEFAULT 1,
+                    UNIQUE(category, level, parent, name)
+                )
+            """)
+
+            # 数据库迁移：为旧表添加新字段
+            # 检查 tags 表是否有 quality 字段
+            cursor.execute("PRAGMA table_info(tags)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "quality" not in columns:
+                cursor.execute("ALTER TABLE tags ADD COLUMN quality TEXT")
+                logger.info("已添加 quality 字段到 tags 表")
+            if "quality_reason" not in columns:
+                cursor.execute("ALTER TABLE tags ADD COLUMN quality_reason TEXT")
+                logger.info("已添加 quality_reason 字段到 tags 表")
 
             conn.commit()
             logger.info("数据库表初始化完成")
@@ -221,6 +251,7 @@ class Database:
             cursor.execute("""
                 INSERT INTO tags (
                     audio_id,
+                    quality, quality_reason,
                     style_primary, style_secondary,
                     emotion_primary, emotion_secondary,
                     scene_primary, scene_secondary,
@@ -229,9 +260,11 @@ class Database:
                     intensity, era, feature,
                     bpm_estimate, brief_description,
                     model_used
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 audio_id,
+                tags.get("quality"),
+                tags.get("quality_reason"),
                 style_primary,
                 to_json(tags.get("style_secondary")),
                 tags.get("emotion_primary"),
@@ -333,6 +366,153 @@ class Database:
                 "failed": failed
             }
 
+    # ==================== 标签库操作 ====================
+
+    def add_tag(self, category: str, level: str, name: str,
+                parent: Optional[str] = None, description: Optional[str] = None,
+                sort_order: int = 0) -> int:
+        """添加标签到标签库"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("""
+                    INSERT INTO tag_library (category, level, parent, name, description, sort_order)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (category, level, parent, name, description, sort_order))
+                conn.commit()
+                return cursor.lastrowid
+            except sqlite3.IntegrityError:
+                logger.warning(f"标签已存在: {category}/{level}/{parent}/{name}")
+                cursor.execute("""
+                    SELECT id FROM tag_library
+                    WHERE category = ? AND level = ? AND parent IS ? AND name = ?
+                """, (category, level, parent, name))
+                row = cursor.fetchone()
+                return row["id"] if row else None
+
+    def update_tag(self, tag_id: int, name: Optional[str] = None,
+                   description: Optional[str] = None, sort_order: Optional[int] = None,
+                   is_active: Optional[int] = None) -> bool:
+        """更新标签"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            updates = []
+            params = []
+            if name is not None:
+                updates.append("name = ?")
+                params.append(name)
+            if description is not None:
+                updates.append("description = ?")
+                params.append(description)
+            if sort_order is not None:
+                updates.append("sort_order = ?")
+                params.append(sort_order)
+            if is_active is not None:
+                updates.append("is_active = ?")
+                params.append(is_active)
+
+            if not updates:
+                return False
+
+            params.append(tag_id)
+            cursor.execute(f"""
+                UPDATE tag_library SET {', '.join(updates)}
+                WHERE id = ?
+            """, params)
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def delete_tag(self, tag_id: int) -> bool:
+        """删除标签"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tag_library WHERE id = ?", (tag_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def get_tags_by_category(self, category: str, active_only: bool = True) -> List[Dict[str, Any]]:
+        """按分类获取标签"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if active_only:
+                cursor.execute("""
+                    SELECT * FROM tag_library
+                    WHERE category = ? AND is_active = 1
+                    ORDER BY sort_order, name
+                """, (category,))
+            else:
+                cursor.execute("""
+                    SELECT * FROM tag_library
+                    WHERE category = ?
+                    ORDER BY sort_order, name
+                """, (category,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def count_tags(self) -> int:
+        """统计标签数量"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM tag_library")
+            return cursor.fetchone()["count"]
+
+    def get_full_tag_library(self) -> Dict[str, Any]:
+        """获取完整标签库（返回 TAG_LIBRARY 结构）"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tag_library WHERE is_active = 1 ORDER BY sort_order, name
+            """)
+            rows = cursor.fetchall()
+
+            # 构建 TAG_LIBRARY 结构
+            tag_library = {
+                "style": {"primary": [], "secondary": {}},
+                "emotion": {"primary": [], "secondary": {}},
+                "scene": {"primary": [], "secondary": {}},
+                "language": [],
+                "vocal": {"primary": [], "secondary": {"类型": [], "特征": []}},
+                "extra": {"intensity": [], "era": [], "feature": []},
+                "quality": {"primary": [], "secondary": {}}
+            }
+
+            for row in rows:
+                row_dict = dict(row)
+                category = row_dict["category"]
+                level = row_dict["level"]
+                parent = row_dict["parent"]
+                name = row_dict["name"]
+
+                if category == "language":
+                    tag_library["language"].append(name)
+                elif category == "extra":
+                    if level in tag_library["extra"]:
+                        tag_library["extra"][level].append(name)
+                elif category in ["style", "emotion", "scene", "quality"]:
+                    if level == "primary":
+                        tag_library[category]["primary"].append(name)
+                    elif level == "secondary" and parent:
+                        if parent not in tag_library[category]["secondary"]:
+                            tag_library[category]["secondary"][parent] = []
+                        tag_library[category]["secondary"][parent].append(name)
+                elif category == "vocal":
+                    if level == "primary":
+                        tag_library["vocal"]["primary"].append(name)
+                    elif level == "secondary" and parent:
+                        if parent not in tag_library["vocal"]["secondary"]:
+                            tag_library["vocal"]["secondary"][parent] = []
+                        tag_library["vocal"]["secondary"][parent].append(name)
+
+            return tag_library
+
+    def get_all_tags_for_display(self) -> List[Dict[str, Any]]:
+        """获取所有标签用于显示"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT * FROM tag_library ORDER BY category, level, parent, sort_order, name
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+
 
 # 全局数据库实例
 _db: Optional[Database] = None
@@ -352,3 +532,92 @@ def get_database(db_path: str = None) -> Database:
 def init_db(db_path: str = None) -> Database:
     """初始化数据库"""
     return get_database(db_path)
+
+
+def init_tag_library_to_db(db: Database = None):
+    """初始化标签库数据到数据库"""
+    if db is None:
+        db = get_database()
+
+    # 检查是否已有数据
+    if db.count_tags() > 0:
+        logger.info("标签库已有数据，跳过初始化")
+        return
+
+    logger.info("开始初始化标签库数据...")
+
+    # 从 tags_schema 导入硬编码的标签库
+    from tags_schema import TAG_LIBRARY
+
+    sort_order = 0
+
+    # 导入风格标签
+    for style in TAG_LIBRARY["style"]["primary"]:
+        db.add_tag("style", "primary", style, sort_order=sort_order)
+        sort_order += 1
+
+    # 导入二级风格
+    for parent, children in TAG_LIBRARY["style"]["secondary"].items():
+        for child in children:
+            db.add_tag("style", "secondary", child, parent=parent, sort_order=sort_order)
+            sort_order += 1
+
+    # 导入情绪标签
+    for emotion in TAG_LIBRARY["emotion"]["primary"]:
+        db.add_tag("emotion", "primary", emotion, sort_order=sort_order)
+        sort_order += 1
+
+    for parent, children in TAG_LIBRARY["emotion"]["secondary"].items():
+        for child in children:
+            db.add_tag("emotion", "secondary", child, parent=parent, sort_order=sort_order)
+            sort_order += 1
+
+    # 导入场景标签
+    for scene in TAG_LIBRARY["scene"]["primary"]:
+        db.add_tag("scene", "primary", scene, sort_order=sort_order)
+        sort_order += 1
+
+    for parent, children in TAG_LIBRARY["scene"]["secondary"].items():
+        for child in children:
+            db.add_tag("scene", "secondary", child, parent=parent, sort_order=sort_order)
+            sort_order += 1
+
+    # 导入语言标签
+    for lang in TAG_LIBRARY["language"]:
+        db.add_tag("language", "primary", lang, sort_order=sort_order)
+        sort_order += 1
+
+    # 导入人声标签
+    for vocal in TAG_LIBRARY["vocal"]["primary"]:
+        db.add_tag("vocal", "primary", vocal, sort_order=sort_order)
+        sort_order += 1
+
+    for parent, children in TAG_LIBRARY["vocal"]["secondary"].items():
+        for child in children:
+            db.add_tag("vocal", "secondary", child, parent=parent, sort_order=sort_order)
+            sort_order += 1
+
+    # 导入特色附加标签
+    for intensity in TAG_LIBRARY["extra"]["intensity"]:
+        db.add_tag("extra", "intensity", intensity, sort_order=sort_order)
+        sort_order += 1
+
+    for era in TAG_LIBRARY["extra"]["era"]:
+        db.add_tag("extra", "era", era, sort_order=sort_order)
+        sort_order += 1
+
+    for feature in TAG_LIBRARY["extra"]["feature"]:
+        db.add_tag("extra", "feature", feature, sort_order=sort_order)
+        sort_order += 1
+
+    # 导入品质标签（固定）
+    quality_tags = [
+        ("低等级", "基础合格，满足日常听歌需求。调性明确、节奏稳定、人声清晰（准确率≥85%）、配器简洁（2-3种乐器）、混音基础均衡"),
+        ("中等级", "细节打磨，具备创作质感。旋律有起伏、和声合理、节奏有层次、发音准确率≥95%、配器丰富（4-6种乐器）、混音细节优化"),
+        ("高等级", "专业质感，逼近商业作品。旋律创意强、和声复杂高级、节奏灵动、发音准确率100%、情感丰富、编曲精细、混音商业级"),
+    ]
+    for name, desc in quality_tags:
+        db.add_tag("quality", "primary", name, description=desc, sort_order=sort_order)
+        sort_order += 1
+
+    logger.info(f"标签库初始化完成，共 {sort_order} 个标签")

@@ -92,11 +92,39 @@ def get_all_secondary_scenes() -> list:
     return all_tags
 
 
-def build_tag_music_tool():
+def build_tag_music_tool(db=None):
     """
     构建 Function Call Schema (Gemini 兼容版)
-    强制使用库内标签，不允许库外标签
+    从数据库动态读取标签，强制使用库内标签，不允许库外标签
     """
+    # 尝试从数据库获取标签库
+    tag_library = None
+    if db is not None:
+        try:
+            tag_library = db.get_full_tag_library()
+        except Exception:
+            pass
+
+    # 如果数据库为空，使用硬编码的标签库
+    if tag_library is None or not tag_library.get("style", {}).get("primary"):
+        tag_library = TAG_LIBRARY
+
+    # 辅助函数：获取所有二级标签
+    def get_all_secondary(category):
+        all_tags = []
+        for tags in tag_library.get(category, {}).get("secondary", {}).values():
+            all_tags.extend(tags)
+        return all_tags
+
+    # 品质描述
+    quality_description = """【必填】音乐品质等级，从以下选项中选择一个：
+
+低等级：调性明确、节奏稳定、人声清晰（准确率≥85%）、配器简洁（2-3种乐器）、混音基础均衡。基础合格，满足日常听歌需求。
+
+中等级：旋律有起伏、和声合理、节奏有层次、发音准确率≥95%、配器丰富（4-6种乐器）、混音细节优化。细节打磨，具备创作质感。
+
+高等级：旋律创意强、和声复杂高级、节奏灵动、发音准确率100%、情感丰富、编曲精细、混音商业级。专业质感，逼近商业作品。"""
+
     return {
         "type": "function",
         "function": {
@@ -105,62 +133,72 @@ def build_tag_music_tool():
             "parameters": {
                 "type": "object",
                 "properties": {
+                    # ===== 品质标签（必填）=====
+                    "quality": {
+                        "type": "string",
+                        "description": quality_description
+                    },
+                    "quality_reason": {
+                        "type": "string",
+                        "description": "【必填】品质评价理由，简要说明为什么给出这个品质等级（30-80字），需包含具体的评判依据，如：旋律、节奏、人声、编曲、混音等方面的具体表现"
+                    },
+
                     # ===== 一级标签（必填，部分可多选）=====
                     "style_primary": {
                         "type": "string",
-                        "description": "【必填，可多选】主要音乐风格，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(TAG_LIBRARY["style"]["primary"])
+                        "description": "【必填，可多选】主要音乐风格，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(tag_library["style"]["primary"])
                     },
                     "emotion_primary": {
                         "type": "string",
-                        "description": "【必填】主要情绪，必须从以下选项中选择一个: " + ", ".join(TAG_LIBRARY["emotion"]["primary"])
+                        "description": "【必填】主要情绪，必须从以下选项中选择一个: " + ", ".join(tag_library["emotion"]["primary"])
                     },
                     "scene_primary": {
                         "type": "string",
-                        "description": "【必填，可多选】主要场景，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(TAG_LIBRARY["scene"]["primary"])
+                        "description": "【必填，可多选】主要场景，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(tag_library["scene"]["primary"])
                     },
                     "language": {
                         "type": "string",
-                        "description": "【必填】歌曲语言，必须从以下选项中选择一个: " + ", ".join(TAG_LIBRARY["language"])
+                        "description": "【必填】歌曲语言，必须从以下选项中选择一个: " + ", ".join(tag_library["language"])
                     },
                     "vocal_primary": {
                         "type": "string",
-                        "description": "【必填】人声类型，必须从以下选项中选择一个: " + ", ".join(TAG_LIBRARY["vocal"]["primary"])
+                        "description": "【必填】人声类型，必须从以下选项中选择一个: " + ", ".join(tag_library["vocal"]["primary"])
                     },
 
                     # ===== 二级标签（可选，多选用逗号分隔）=====
                     "style_secondary": {
                         "type": "string",
-                        "description": "【可选】二级风格，根据一级风格选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary_styles())
+                        "description": "【可选】二级风格，根据一级风格选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary("style"))
                     },
                     "emotion_secondary": {
                         "type": "string",
-                        "description": "【可选】二级情绪，根据一级情绪选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary_emotions())
+                        "description": "【可选】二级情绪，根据一级情绪选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary("emotion"))
                     },
                     "scene_secondary": {
                         "type": "string",
-                        "description": "【可选】二级场景，根据一级场景选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary_scenes())
+                        "description": "【可选】二级场景，根据一级场景选择1-3个，用逗号分隔。可选: " + ", ".join(get_all_secondary("scene"))
                     },
                     "vocal_type": {
                         "type": "string",
-                        "description": "【可选】人声演唱类型，用逗号分隔。可选: " + ", ".join(TAG_LIBRARY["vocal"]["secondary"]["类型"])
+                        "description": "【可选】人声演唱类型，用逗号分隔。可选: " + ", ".join(tag_library["vocal"]["secondary"].get("类型", []))
                     },
                     "vocal_traits": {
                         "type": "string",
-                        "description": "【可选】人声特征，用逗号分隔。可选: " + ", ".join(TAG_LIBRARY["vocal"]["secondary"]["特征"])
+                        "description": "【可选】人声特征，用逗号分隔。可选: " + ", ".join(tag_library["vocal"]["secondary"].get("特征", []))
                     },
 
                     # ===== 特色附加类 =====
                     "intensity": {
                         "type": "string",
-                        "description": "【可选】音乐强度，从以下选项中选择: " + ", ".join(TAG_LIBRARY["extra"]["intensity"])
+                        "description": "【可选】音乐强度，从以下选项中选择: " + ", ".join(tag_library["extra"]["intensity"])
                     },
                     "era": {
                         "type": "string",
-                        "description": "【可选】年代属性，从以下选项中选择: " + ", ".join(TAG_LIBRARY["extra"]["era"])
+                        "description": "【可选】年代属性，从以下选项中选择: " + ", ".join(tag_library["extra"]["era"])
                     },
                     "feature": {
                         "type": "string",
-                        "description": "【可选】特色定位，从以下选项中选择1-2个，用逗号分隔: " + ", ".join(TAG_LIBRARY["extra"]["feature"])
+                        "description": "【可选】特色定位，从以下选项中选择1-2个，用逗号分隔: " + ", ".join(tag_library["extra"]["feature"])
                     },
 
                     # ===== 其他信息 =====
@@ -174,6 +212,8 @@ def build_tag_music_tool():
                     }
                 },
                 "required": [
+                    "quality",
+                    "quality_reason",
                     "style_primary",
                     "emotion_primary",
                     "scene_primary",

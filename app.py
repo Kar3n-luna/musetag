@@ -17,7 +17,7 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import get_config, reload_config
-from database import get_database
+from database import get_database, init_tag_library_to_db
 from tagger import create_tagger
 from tags_schema import TAG_LIBRARY
 from utils import scan_audio_files, get_file_hash, get_audio_duration, ensure_dir, format_duration
@@ -48,9 +48,11 @@ def init_session_state():
         st.session_state.config = get_config()
     if "db" not in st.session_state:
         st.session_state.db = get_database()
+        # 初始化标签库数据
+        init_tag_library_to_db(st.session_state.db)
     if "tagger" not in st.session_state:
         try:
-            st.session_state.tagger = create_tagger(st.session_state.config)
+            st.session_state.tagger = create_tagger(st.session_state.config, st.session_state.db)
         except Exception as e:
             st.session_state.tagger = None
             logger.error(f"初始化打标器失败: {e}")
@@ -66,7 +68,7 @@ def render_sidebar():
 
     page = st.sidebar.radio(
         "导航",
-        ["📁 导入音频", "🎵 打标面板", "📊 打标记录", "🏷️ 标签库", "⚙️ 设置"],
+        ["📁 导入音频", "🎵 打标面板", "📊 打标记录", "🏷️ 标签管理", "⚙️ 设置"],
         label_visibility="collapsed"
     )
 
@@ -255,7 +257,7 @@ def run_tagging(file_ids: List[int], all_files: List[Dict]):
         logger.info(f"开始处理: {file_info['file_name']}")
 
         try:
-            tagger = st.session_state.tagger or create_tagger(st.session_state.config)
+            tagger = st.session_state.tagger or create_tagger(st.session_state.config, st.session_state.db)
             tags = tagger.tag(file_info["file_path"])
 
             st.session_state.db.save_tags(
@@ -285,6 +287,13 @@ def render_tags_detail(file_info: Dict, tags: Dict):
 
     with col1:
         st.markdown("#### 📋 一级标签")
+        # 显示品质标签
+        quality = tags.get("quality", "-")
+        quality_emoji = {"低等级": "🟢", "中等级": "🟡", "高等级": "🔴"}.get(quality, "⚪")
+        st.markdown(f"**品质**: {quality_emoji} {quality}")
+        # 显示品质评价理由
+        if tags.get("quality_reason"):
+            st.markdown(f"**品质理由**: {tags['quality_reason']}")
         if tags.get("style_primary"):
             if isinstance(tags["style_primary"], list):
                 st.markdown(f"**风格**: {', '.join(tags['style_primary'])}")
@@ -353,6 +362,13 @@ def render_records_page():
             col1, col2 = st.columns(2)
 
             with col1:
+                # 显示品质标签
+                quality = record.get("quality", "-")
+                quality_emoji = {"低等级": "🟢", "中等级": "🟡", "高等级": "🔴"}.get(quality, "⚪")
+                st.markdown(f"**品质**: {quality_emoji} {quality}")
+                # 显示品质评价理由
+                if record.get("quality_reason"):
+                    st.markdown(f"**品质理由**: {record['quality_reason']}")
                 if record.get("style_primary"):
                     if isinstance(record["style_primary"], list):
                         st.markdown(f"**风格**: {', '.join(record['style_primary'])}")
@@ -385,16 +401,22 @@ def render_records_page():
 
 
 def export_to_csv(records: List[Dict]):
-    """导出为 CSV - 4列：文件名、一级标签、二级标签、备注"""
+    """导出为 CSV - 5列：文件名、品质、一级标签、二级标签、备注"""
     import io
 
     output = io.StringIO()
     writer = csv.writer(output)
 
-    headers = ["文件名", "一级标签", "二级标签", "备注"]
+    headers = ["文件名", "品质", "一级标签", "二级标签", "备注"]
     writer.writerow(headers)
 
     for record in records:
+        # 品质标签
+        quality = record.get("quality", "-")
+
+        # 备注使用品质评价理由
+        note = record.get("quality_reason", "")
+
         # 一级标签（直接输出值，用逗号分隔）
         primary_tags = []
         if record.get("style_primary"):
@@ -437,9 +459,10 @@ def export_to_csv(records: List[Dict]):
 
         writer.writerow([
             record.get("file_name", ""),
+            quality,
             ", ".join(primary_tags),
             ", ".join(secondary_tags),
-            record.get("brief_description", "")
+            note
         ])
 
     csv_data = output.getvalue()
@@ -451,90 +474,258 @@ def export_to_csv(records: List[Dict]):
     )
 
 
-# ==================== 标签库页面 ====================
+# ==================== 标签管理页面 ====================
 
-def render_tags_library_page():
-    """渲染标签库页面"""
-    st.markdown("## 🏷️ 标签库")
+def render_tag_management_page():
+    """渲染标签管理页面"""
+    st.markdown("## 🏷️ 标签管理")
 
-    st.markdown("AI 打标时必须从以下标签库中选择。")
+    st.markdown("管理 AI 打标使用的标签库。修改后，下次 AI 调用时将使用最新的标签库。")
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["风格", "情绪", "场景", "语言/人声", "特色附加"])
+    db = st.session_state.db
+
+    # 获取标签库统计
+    all_tags = db.get_all_tags_for_display()
+
+    # 按分类统计
+    category_counts = {}
+    for tag in all_tags:
+        cat = tag["category"]
+        if cat not in category_counts:
+            category_counts[cat] = 0
+        category_counts[cat] += 1
+
+    # 显示统计
+    st.markdown("### 📊 标签统计")
+    cols = st.columns(7)
+    categories = ["style", "emotion", "scene", "language", "vocal", "extra", "quality"]
+    category_names = {
+        "style": "风格", "emotion": "情绪", "scene": "场景",
+        "language": "语言", "vocal": "人声", "extra": "特色", "quality": "品质"
+    }
+    for i, cat in enumerate(categories):
+        with cols[i]:
+            st.metric(category_names.get(cat, cat), category_counts.get(cat, 0))
+
+    st.markdown("---")
+
+    # 标签管理标签页
+    tab1, tab2, tab3 = st.tabs(["查看标签", "添加标签", "编辑/删除标签"])
 
     with tab1:
+        render_view_tags(db)
+
+    with tab2:
+        render_add_tag(db)
+
+    with tab3:
+        render_edit_delete_tag(db, all_tags)
+
+
+def render_view_tags(db):
+    """查看标签"""
+    tag_library = db.get_full_tag_library()
+
+    view_tabs = st.tabs(["风格", "情绪", "场景", "语言/人声", "特色附加", "品质"])
+
+    with view_tabs[0]:
         st.markdown("### 一级风格")
         cols = st.columns(4)
-        for i, style in enumerate(TAG_LIBRARY["style"]["primary"]):
+        for i, style in enumerate(tag_library["style"]["primary"]):
             cols[i % 4].markdown(f"- {style}")
 
         st.markdown("### 二级风格")
-        for primary, secondary_list in TAG_LIBRARY["style"]["secondary"].items():
+        for primary, secondary_list in tag_library["style"]["secondary"].items():
             with st.expander(f"**{primary}**"):
                 cols = st.columns(4)
                 for i, sec in enumerate(secondary_list):
                     cols[i % 4].markdown(f"- {sec}")
 
-    with tab2:
+    with view_tabs[1]:
         st.markdown("### 一级情绪")
         cols = st.columns(3)
-        for i, emotion in enumerate(TAG_LIBRARY["emotion"]["primary"]):
+        for i, emotion in enumerate(tag_library["emotion"]["primary"]):
             cols[i].markdown(f"- {emotion}")
 
         st.markdown("### 二级情绪")
-        for primary, secondary_list in TAG_LIBRARY["emotion"]["secondary"].items():
+        for primary, secondary_list in tag_library["emotion"]["secondary"].items():
             with st.expander(f"**{primary}**"):
                 cols = st.columns(4)
                 for i, sec in enumerate(secondary_list):
                     cols[i % 4].markdown(f"- {sec}")
 
-    with tab3:
+    with view_tabs[2]:
         st.markdown("### 一级场景")
         cols = st.columns(4)
-        for i, scene in enumerate(TAG_LIBRARY["scene"]["primary"]):
+        for i, scene in enumerate(tag_library["scene"]["primary"]):
             cols[i % 4].markdown(f"- {scene}")
 
         st.markdown("### 二级场景")
-        for primary, secondary_list in TAG_LIBRARY["scene"]["secondary"].items():
+        for primary, secondary_list in tag_library["scene"]["secondary"].items():
             with st.expander(f"**{primary}**"):
                 cols = st.columns(4)
                 for i, sec in enumerate(secondary_list):
                     cols[i % 4].markdown(f"- {sec}")
 
-    with tab4:
+    with view_tabs[3]:
         col1, col2 = st.columns(2)
 
         with col1:
             st.markdown("### 语言")
-            for lang in TAG_LIBRARY["language"]:
+            for lang in tag_library["language"]:
                 st.markdown(f"- {lang}")
 
         with col2:
             st.markdown("### 人声类型（一级）")
-            for vocal in TAG_LIBRARY["vocal"]["primary"]:
+            for vocal in tag_library["vocal"]["primary"]:
                 st.markdown(f"- {vocal}")
 
             st.markdown("### 人声特征（二级）")
             cols = st.columns(3)
-            for i, trait in enumerate(TAG_LIBRARY["vocal"]["secondary"]["特征"]):
-                cols[i % 3].markdown(f"- {trait}")
+            for parent, traits in tag_library["vocal"]["secondary"].items():
+                for i, trait in enumerate(traits):
+                    cols[i % 3].markdown(f"- {trait}")
 
-    with tab5:
+    with view_tabs[4]:
         col1, col2, col3 = st.columns(3)
 
         with col1:
             st.markdown("### 强度")
-            for intensity in TAG_LIBRARY["extra"]["intensity"]:
+            for intensity in tag_library["extra"]["intensity"]:
                 st.markdown(f"- {intensity}")
 
         with col2:
             st.markdown("### 年代")
-            for era in TAG_LIBRARY["extra"]["era"]:
+            for era in tag_library["extra"]["era"]:
                 st.markdown(f"- {era}")
 
         with col3:
             st.markdown("### 特色")
-            for feature in TAG_LIBRARY["extra"]["feature"]:
+            for feature in tag_library["extra"]["feature"]:
                 st.markdown(f"- {feature}")
+
+    with view_tabs[5]:
+        st.markdown("### 品质等级")
+        st.markdown("品质标签为固定标准，不建议修改。")
+        for quality in tag_library["quality"]["primary"]:
+            st.markdown(f"- {quality}")
+
+
+def render_add_tag(db):
+    """添加标签"""
+    st.markdown("### 添加新标签")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        category = st.selectbox(
+            "分类",
+            options=["style", "emotion", "scene", "language", "vocal", "extra"],
+            format_func=lambda x: {
+                "style": "风格", "emotion": "情绪", "scene": "场景",
+                "language": "语言", "vocal": "人声", "extra": "特色附加"
+            }.get(x, x)
+        )
+
+    with col2:
+        level = st.selectbox(
+            "级别",
+            options=["primary", "secondary"],
+            format_func=lambda x: "一级" if x == "primary" else "二级"
+        )
+
+    # 根据分类和级别动态获取父级选项
+    parent_options = [""]
+    if level == "secondary":
+        tag_library = db.get_full_tag_library()
+        if category in ["style", "emotion", "scene"]:
+            parent_options.extend(tag_library[category]["primary"])
+        elif category == "vocal":
+            parent_options.extend(["类型", "特征"])
+
+    with col3:
+        if level == "secondary":
+            parent = st.selectbox("父级标签", options=parent_options)
+        else:
+            parent = ""
+
+    tag_name = st.text_input("标签名称", placeholder="输入标签名称")
+    tag_description = st.text_area("标签描述（可选）", placeholder="输入标签的说明或描述")
+
+    if st.button("➕ 添加标签", type="primary"):
+        if not tag_name:
+            st.error("请输入标签名称")
+        elif level == "secondary" and not parent:
+            st.error("二级标签必须选择父级标签")
+        else:
+            try:
+                db.add_tag(
+                    category=category,
+                    level=level,
+                    name=tag_name,
+                    parent=parent if parent else None,
+                    description=tag_description if tag_description else None
+                )
+                st.success(f"标签「{tag_name}」添加成功！")
+                st.rerun()
+            except Exception as e:
+                st.error(f"添加失败: {e}")
+
+
+def render_edit_delete_tag(db, all_tags):
+    """编辑/删除标签"""
+    st.markdown("### 编辑或删除标签")
+
+    # 筛选选项
+    col1, col2 = st.columns(2)
+    with col1:
+        filter_category = st.selectbox(
+            "筛选分类",
+            options=["全部", "style", "emotion", "scene", "language", "vocal", "extra", "quality"],
+            format_func=lambda x: {
+                "全部": "全部", "style": "风格", "emotion": "情绪", "scene": "场景",
+                "language": "语言", "vocal": "人声", "extra": "特色附加", "quality": "品质"
+            }.get(x, x)
+        )
+    with col2:
+        search_term = st.text_input("搜索标签", placeholder="输入关键词")
+
+    # 筛选标签
+    filtered_tags = all_tags
+    if filter_category != "全部":
+        filtered_tags = [t for t in filtered_tags if t["category"] == filter_category]
+    if search_term:
+        filtered_tags = [t for t in filtered_tags if search_term.lower() in t["name"].lower()]
+
+    st.markdown(f"**共 {len(filtered_tags)} 个标签**")
+
+    # 显示标签列表
+    for tag in filtered_tags[:50]:  # 限制显示数量
+        with st.expander(f"{'📁' if tag['level'] == 'primary' else '📄'} {tag['name']} ({tag['category']}/{tag['level']})"):
+            col1, col2, col3 = st.columns([2, 2, 1])
+
+            with col1:
+                new_name = st.text_input("名称", value=tag["name"], key=f"name_{tag['id']}")
+            with col2:
+                new_desc = st.text_input("描述", value=tag["description"] or "", key=f"desc_{tag['id']}")
+            with col3:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("💾 保存", key=f"save_{tag['id']}"):
+                    try:
+                        db.update_tag(tag["id"], name=new_name, description=new_desc if new_desc else None)
+                        st.success("保存成功！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"保存失败: {e}")
+
+                if tag["category"] != "quality":  # 品质标签不允许删除
+                    if st.button("🗑️ 删除", key=f"del_{tag['id']}"):
+                        try:
+                            db.delete_tag(tag["id"])
+                            st.success("删除成功！")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"删除失败: {e}")
 
 
 # ==================== 设置页面 ====================
@@ -560,7 +751,7 @@ def render_settings_page():
                 f.write(f"OPENROUTER_API_KEY={new_key}\n")
 
             st.session_state.config = reload_config()
-            st.session_state.tagger = create_tagger(st.session_state.config)
+            st.session_state.tagger = create_tagger(st.session_state.config, st.session_state.db)
             st.success("API Key 已更新")
 
     st.markdown("---")
@@ -568,7 +759,7 @@ def render_settings_page():
 
     if st.button("🔍 测试 API 连接"):
         with st.spinner("正在测试..."):
-            tagger = st.session_state.tagger or create_tagger(st.session_state.config)
+            tagger = st.session_state.tagger or create_tagger(st.session_state.config, st.session_state.db)
             if tagger.test_connection():
                 st.success("✅ API 连接正常")
             else:
@@ -605,8 +796,8 @@ def main():
         render_tagging_page()
     elif page == "📊 打标记录":
         render_records_page()
-    elif page == "🏷️ 标签库":
-        render_tags_library_page()
+    elif page == "🏷️ 标签管理":
+        render_tag_management_page()
     elif page == "⚙️ 设置":
         render_settings_page()
 

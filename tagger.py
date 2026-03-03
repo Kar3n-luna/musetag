@@ -18,12 +18,13 @@ logger = logging.getLogger(__name__)
 class AudioTagger:
     """音频打标器"""
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, db=None):
         self.config = config
         self.api_key = config.openrouter_api_key
         self.base_url = config.openrouter_base_url
         self.model = config.model
-        self.tool = build_tag_music_tool()
+        self.db = db
+        self.tool = build_tag_music_tool(db)
 
     def tag(self, audio_path: str) -> Dict[str, Any]:
         """
@@ -161,15 +162,38 @@ class AudioTagger:
         raise Exception(f"API 调用失败: {last_error}")
 
     def _build_prompt(self) -> str:
-        """构建提示词 - 强调必须使用库内标签"""
+        """构建提示词 - 强调必须使用库内标签，包含品质判断标准"""
         return """请仔细分析这段音频，为其打上分类标签。
 
 【重要规则】
 1. 所有标签必须从预设标签库中选择，不允许使用库外标签
 2. 一级标签为必填项，其中 style_primary 和 scene_primary 可多选（用逗号分隔）
 3. 二级标签为可选项，可多选
+4. 品质等级为必填项，需要综合评估后选择
+
+【品质等级判断标准】
+
+**低等级（基础合格）**：
+- 旋律与调性：调性明确，无明显跑调、音准偏移，旋律流畅不违和
+- 节奏与结构：节奏稳定，无明显抢拍、拖拍，具备"主歌+副歌"基础结构
+- 人声与情感：人声清晰可辨，无严重机械音、卡顿，歌词发音准确率≥85%
+- 编曲与混音：配器简洁（2-3种核心乐器），混音基础均衡，无明显失真
+
+**中等级（细节打磨）**：
+- 旋律与调性：旋律有起伏变化，副歌与主歌音域形成对比，和声进行合理
+- 节奏与结构：节奏富有层次，具备完整结构（前奏+主歌+副歌+尾奏）
+- 人声与情感：发音准确率≥95%，咬字细腻，有基础情感表达
+- 编曲与混音：配器丰富（4-6种乐器），声部层次清晰，混音细节优化
+
+**高等级（专业质感）**：
+- 旋律与调性：旋律创意性强，Hook段具备高辨识度，和声编排复杂高级
+- 节奏与结构：节奏变化灵动，结构可灵活创新，整体时长适配风格
+- 人声与情感：发音准确率100%，情感表达丰富，接近专业演唱水准
+- 编曲与混音：配器精细化，混音达到商业级标准，动态范围合理
 
 【标签说明】
+- quality: 品质等级，必填（低等级/中等级/高等级）
+- quality_reason: 品质评价理由，必填，简要说明给出该品质等级的具体依据（30-80字）
 - style_primary: 音乐风格，可选1-3个（流行/摇滚/电子/嘻哈说唱/民谣/国风/爵士/蓝调/纯音乐/古典/世界音乐）
 - emotion_primary: 主要情绪，选1个（积极情绪/中性情绪/消极情绪）
 - scene_primary: 适用场景，可选1-3个（学习工作/运动健身/休闲放松/影音游戏/出行生活/社交聚会/特殊场景）
@@ -226,9 +250,12 @@ class AudioTagger:
             raise ValueError(f"解析 API 响应失败: {e}")
 
 
-def create_tagger(config: Config = None) -> AudioTagger:
+def create_tagger(config: Config = None, db=None) -> AudioTagger:
     """创建打标器实例"""
     if config is None:
         from config import get_config
         config = get_config()
-    return AudioTagger(config)
+    if db is None:
+        from database import get_database
+        db = get_database()
+    return AudioTagger(config, db)
