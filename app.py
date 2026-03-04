@@ -780,6 +780,15 @@ def render_settings_page():
 
     stats = st.session_state.db.get_statistics()
     st.markdown(f"**总记录数**: {stats['total_files']} 条")
+    st.markdown(f"**标签库数量**: {st.session_state.db.count_tags()} 个")
+
+    st.markdown("#### 重新初始化标签库")
+    st.markdown("从代码同步最新的标签库到数据库（不会影响已打标的数据）")
+    if st.button("🔄 重新初始化标签库", type="secondary"):
+        from database import init_tag_library_to_db
+        init_tag_library_to_db(st.session_state.db, force=True)
+        st.success(f"标签库已更新，共 {st.session_state.db.count_tags()} 个标签")
+        st.rerun()
 
     st.markdown("#### 清空所有数据")
     confirm_clear = st.checkbox("确认清空所有数据（不可恢复）")
