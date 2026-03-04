@@ -71,6 +71,7 @@ class Database:
                     intensity TEXT,
                     era TEXT,
                     feature TEXT,
+                    arrangement TEXT,
 
                     -- 其他信息
                     bpm_estimate INTEGER,
@@ -107,6 +108,9 @@ class Database:
             if "quality_reason" not in columns:
                 cursor.execute("ALTER TABLE tags ADD COLUMN quality_reason TEXT")
                 logger.info("已添加 quality_reason 字段到 tags 表")
+            if "arrangement" not in columns:
+                cursor.execute("ALTER TABLE tags ADD COLUMN arrangement TEXT")
+                logger.info("已添加 arrangement 字段到 tags 表")
 
             conn.commit()
             logger.info("数据库表初始化完成")
@@ -257,10 +261,10 @@ class Database:
                     scene_primary, scene_secondary,
                     language,
                     vocal_primary, vocal_type, vocal_traits,
-                    intensity, era, feature,
+                    intensity, era, feature, arrangement,
                     bpm_estimate, brief_description,
                     model_used
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 audio_id,
                 tags.get("quality"),
@@ -278,6 +282,7 @@ class Database:
                 tags.get("intensity"),
                 tags.get("era"),
                 to_json(tags.get("feature")),
+                to_json(tags.get("arrangement")),
                 tags.get("bpm_estimate"),
                 tags.get("brief_description"),
                 model
@@ -299,7 +304,7 @@ class Database:
             tags = dict(row)
 
             # 解析 JSON 字段
-            json_fields = ["style_primary", "style_secondary", "scene_primary", "scene_secondary", "emotion_secondary", "vocal_type", "vocal_traits", "feature"]
+            json_fields = ["style_primary", "style_secondary", "scene_primary", "scene_secondary", "emotion_secondary", "vocal_type", "vocal_traits", "feature", "arrangement"]
             for field in json_fields:
                 if tags.get(field):
                     try:
@@ -329,7 +334,7 @@ class Database:
             for row in rows:
                 item = dict(row)
                 # 解析 JSON 字段
-                json_fields = ["style_primary", "style_secondary", "scene_primary", "scene_secondary", "emotion_secondary", "vocal_type", "vocal_traits", "feature"]
+                json_fields = ["style_primary", "style_secondary", "scene_primary", "scene_secondary", "emotion_secondary", "vocal_type", "vocal_traits", "feature", "arrangement"]
                 for field in json_fields:
                     if item.get(field):
                         try:

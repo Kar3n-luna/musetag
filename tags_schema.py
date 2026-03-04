@@ -201,6 +201,10 @@ def build_tag_music_tool(db=None):
                         "type": "string",
                         "description": "【可选】特色定位，从以下选项中选择1-2个，用逗号分隔: " + ", ".join(tag_library["extra"]["feature"])
                     },
+                    "arrangement": {
+                        "type": "string",
+                        "description": "【可选】编曲配器混音特色，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(tag_library["extra"].get("编曲配器混音", []))
+                    },
 
                     # ===== 其他信息 =====
                     "bpm_estimate": {
