@@ -610,9 +610,17 @@ def render_view_tags(db):
                 st.markdown(f"- {era}")
 
         with col3:
-            st.markdown("### 特色")
+            st.markdown("### 特色定位")
             for feature in tag_library["extra"]["feature"]:
                 st.markdown(f"- {feature}")
+
+        # 编曲配器混音单独一行
+        st.markdown("---")
+        st.markdown("### 编曲、配器、混音特色")
+        arrangement_tags = tag_library["extra"].get("编曲配器混音", [])
+        cols = st.columns(4)
+        for i, tag in enumerate(arrangement_tags):
+            cols[i % 4].markdown(f"- {tag}")
 
     with view_tabs[5]:
         st.markdown("### 品质等级")
