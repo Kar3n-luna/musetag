@@ -476,7 +476,7 @@ class Database:
                 "scene": {"primary": [], "secondary": {}},
                 "language": [],
                 "vocal": {"primary": [], "secondary": {"类型": [], "特征": []}},
-                "extra": {"intensity": [], "era": [], "feature": []},
+                "extra": {"intensity": [], "era": [], "feature": [], "编曲配器混音": []},
                 "quality": {"primary": [], "secondary": {}}
             }
 
@@ -490,8 +490,10 @@ class Database:
                 if category == "language":
                     tag_library["language"].append(name)
                 elif category == "extra":
-                    if level in tag_library["extra"]:
-                        tag_library["extra"][level].append(name)
+                    # 动态添加不存在的 key
+                    if level not in tag_library["extra"]:
+                        tag_library["extra"][level] = []
+                    tag_library["extra"][level].append(name)
                 elif category in ["style", "emotion", "scene", "quality"]:
                     if level == "primary":
                         tag_library[category]["primary"].append(name)
