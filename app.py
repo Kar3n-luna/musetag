@@ -586,25 +586,27 @@ def render_view_tags(db):
     with view_tabs[4]:
         col1, col2, col3 = st.columns(3)
 
+        extra_secondary = tag_library["extra"].get("secondary", {})
+
         with col1:
             st.markdown("### 强度（二级标签）")
-            for intensity in tag_library["extra"]["secondary"].get("强度", []):
+            for intensity in extra_secondary.get("强度", []):
                 st.markdown(f"- {intensity}")
 
         with col2:
             st.markdown("### 年代（二级标签）")
-            for era in tag_library["extra"]["secondary"].get("年代", []):
+            for era in extra_secondary.get("年代", []):
                 st.markdown(f"- {era}")
 
         with col3:
             st.markdown("### 特色定位（二级标签）")
-            for feature in tag_library["extra"]["secondary"].get("特色", []):
+            for feature in extra_secondary.get("特色", []):
                 st.markdown(f"- {feature}")
 
         # 编曲配器混音单独一行
         st.markdown("---")
         st.markdown("### 编曲、配器、混音特色（二级标签）")
-        arrangement_tags = tag_library["extra"]["secondary"].get("编曲配器混音", [])
+        arrangement_tags = extra_secondary.get("编曲配器混音", [])
         cols = st.columns(4)
         for i, tag in enumerate(arrangement_tags):
             cols[i % 4].markdown(f"- {tag}")
