@@ -433,8 +433,6 @@ def export_to_csv(records: List[Dict]):
             primary_tags.append(record["language"])
         if record.get("vocal_primary"):
             primary_tags.append(record["vocal_primary"])
-        if record.get("intensity"):
-            primary_tags.append(record["intensity"])
 
         # 二级标签（直接输出值，用逗号分隔）
         secondary_tags = []
@@ -450,6 +448,8 @@ def export_to_csv(records: List[Dict]):
             secondary_tags.extend(record["vocal_traits"])
         if record.get("era"):
             secondary_tags.append(record["era"])
+        if record.get("intensity"):
+            secondary_tags.append(record["intensity"])
         if record.get("feature"):
             secondary_tags.extend(record["feature"])
         if record.get("bpm_estimate"):
