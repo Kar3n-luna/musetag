@@ -90,6 +90,24 @@ class AudioTagger:
         }
         return mime_map.get(ext, "audio/mpeg")
 
+    def _get_tool_choice(self):
+        """根据模型名称返回合适的 tool_choice 格式"""
+        model_name = self.model.lower()
+        # Gemini 3 系列不支持复杂的 tool_choice 格式
+        if "gemini-3" in model_name:
+            return None
+        # 其他模型使用标准格式
+        return {"type": "function", "function": {"name": "tag_music"}}
+
+    def _get_max_tokens(self) -> int:
+        """根据模型名称返回合适的 max_tokens"""
+        model_name = self.model.lower()
+        # Gemini 3.1 pro 使用 extended thinking，需要更多 token
+        if "gemini-3.1-pro" in model_name:
+            return 8192
+        # 其他模型使用默认值
+        return 1024
+
     def _call_api(self, audio_base64: str, mime_type: str) -> Dict[str, Any]:
         """调用 OpenRouter API"""
         headers = {
@@ -122,9 +140,13 @@ class AudioTagger:
             "model": self.model,
             "messages": messages,
             "tools": [self.tool],
-            "tool_choice": {"type": "function", "function": {"name": "tag_music"}},
-            "max_tokens": 1024
+            "max_tokens": self._get_max_tokens()
         }
+
+        # 根据模型选择 tool_choice
+        tool_choice = self._get_tool_choice()
+        if tool_choice:
+            payload["tool_choice"] = tool_choice
 
         # 带重试的请求
         last_error = None

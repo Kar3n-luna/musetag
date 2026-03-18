@@ -338,6 +338,11 @@ def render_records_page():
     """渲染打标记录页面"""
     st.markdown("## 📊 打标记录")
 
+    # 检查是否需要刷新（删除后）
+    if st.session_state.get("refresh_records"):
+        st.session_state.refresh_records = False
+        st.rerun()
+
     all_tags = st.session_state.db.get_all_tags()
 
     if not all_tags:
@@ -406,8 +411,8 @@ def render_records_page():
                 st.markdown("<br>", unsafe_allow_html=True)
                 if st.button("🗑️ 删除", key=f"del_record_{audio_id}"):
                     st.session_state.db.delete_audio_file(audio_id)
+                    st.session_state.refresh_records = True
                     st.success("已删除")
-                    st.rerun()
 
 
 def export_to_csv(records: List[Dict]):
