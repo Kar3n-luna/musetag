@@ -287,13 +287,6 @@ def render_tags_detail(file_info: Dict, tags: Dict):
 
     with col1:
         st.markdown("#### 📋 一级标签")
-        # 显示品质标签
-        quality = tags.get("quality", "-")
-        quality_emoji = {"低品质": "🟢", "中品质": "🟡", "高品质": "🔴"}.get(quality, "⚪")
-        st.markdown(f"**品质**: {quality_emoji} {quality}")
-        # 显示品质评价理由
-        if tags.get("quality_reason"):
-            st.markdown(f"**品质理由**: {tags['quality_reason']}")
         if tags.get("style_primary"):
             if isinstance(tags["style_primary"], list):
                 st.markdown(f"**风格**: {', '.join(tags['style_primary'])}")
@@ -370,13 +363,6 @@ def render_records_page():
             col1, col2, col3 = st.columns([2, 2, 1])
 
             with col1:
-                # 显示品质标签
-                quality = record.get("quality", "-")
-                quality_emoji = {"低品质": "🟢", "中品质": "🟡", "高品质": "🔴"}.get(quality, "⚪")
-                st.markdown(f"**品质**: {quality_emoji} {quality}")
-                # 显示品质评价理由
-                if record.get("quality_reason"):
-                    st.markdown(f"**品质理由**: {record['quality_reason']}")
                 if record.get("style_primary"):
                     if isinstance(record["style_primary"], list):
                         st.markdown(f"**风格**: {', '.join(record['style_primary'])}")
@@ -416,21 +402,18 @@ def render_records_page():
 
 
 def export_to_csv(records: List[Dict]):
-    """导出为 CSV - 5列：文件名、品质、一级标签、二级标签、备注"""
+    """导出为 CSV - 4列：文件名、一级标签、二级标签、备注"""
     import io
 
     output = io.StringIO()
     writer = csv.writer(output)
 
-    headers = ["文件名", "品质", "一级标签", "二级标签", "备注"]
+    headers = ["文件名", "一级标签", "二级标签", "备注"]
     writer.writerow(headers)
 
     for record in records:
-        # 品质标签
-        quality = record.get("quality", "-")
-
-        # 备注使用品质评价理由
-        note = record.get("quality_reason", "")
+        # 备注使用描述
+        note = record.get("brief_description", "")
 
         # 一级标签（直接输出值，用逗号分隔）
         primary_tags = []
@@ -474,7 +457,6 @@ def export_to_csv(records: List[Dict]):
 
         writer.writerow([
             record.get("file_name", ""),
-            quality,
             ", ".join(primary_tags),
             ", ".join(secondary_tags),
             note
@@ -512,11 +494,11 @@ def render_tag_management_page():
 
     # 显示统计
     st.markdown("### 📊 标签统计")
-    cols = st.columns(7)
-    categories = ["style", "emotion", "scene", "language", "vocal", "extra", "quality"]
+    cols = st.columns(6)
+    categories = ["style", "emotion", "scene", "language", "vocal", "extra"]
     category_names = {
         "style": "风格", "emotion": "情绪", "scene": "场景",
-        "language": "语言", "vocal": "人声", "extra": "特色", "quality": "品质"
+        "language": "语言", "vocal": "人声", "extra": "特色"
     }
     for i, cat in enumerate(categories):
         with cols[i]:
@@ -541,7 +523,7 @@ def render_view_tags(db):
     """查看标签"""
     tag_library = db.get_full_tag_library()
 
-    view_tabs = st.tabs(["风格", "情绪", "场景", "语言/人声", "特色附加", "品质"])
+    view_tabs = st.tabs(["风格", "情绪", "场景", "语言/人声", "特色附加"])
 
     with view_tabs[0]:
         st.markdown("### 一级风格")
@@ -605,33 +587,27 @@ def render_view_tags(db):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            st.markdown("### 强度")
-            for intensity in tag_library["extra"]["intensity"]:
+            st.markdown("### 强度（二级标签）")
+            for intensity in tag_library["extra"]["secondary"].get("强度", []):
                 st.markdown(f"- {intensity}")
 
         with col2:
-            st.markdown("### 年代")
-            for era in tag_library["extra"]["era"]:
+            st.markdown("### 年代（二级标签）")
+            for era in tag_library["extra"]["secondary"].get("年代", []):
                 st.markdown(f"- {era}")
 
         with col3:
-            st.markdown("### 特色定位")
-            for feature in tag_library["extra"]["feature"]:
+            st.markdown("### 特色定位（二级标签）")
+            for feature in tag_library["extra"]["secondary"].get("特色", []):
                 st.markdown(f"- {feature}")
 
         # 编曲配器混音单独一行
         st.markdown("---")
-        st.markdown("### 编曲、配器、混音特色")
-        arrangement_tags = tag_library["extra"].get("编曲配器混音", [])
+        st.markdown("### 编曲、配器、混音特色（二级标签）")
+        arrangement_tags = tag_library["extra"]["secondary"].get("编曲配器混音", [])
         cols = st.columns(4)
         for i, tag in enumerate(arrangement_tags):
             cols[i % 4].markdown(f"- {tag}")
-
-    with view_tabs[5]:
-        st.markdown("### 品质等级")
-        st.markdown("品质标签为固定标准，不建议修改。")
-        for quality in tag_library["quality"]["primary"]:
-            st.markdown(f"- {quality}")
 
 
 def render_add_tag(db):
@@ -704,10 +680,10 @@ def render_edit_delete_tag(db, all_tags):
     with col1:
         filter_category = st.selectbox(
             "筛选分类",
-            options=["全部", "style", "emotion", "scene", "language", "vocal", "extra", "quality"],
+            options=["全部", "style", "emotion", "scene", "language", "vocal", "extra"],
             format_func=lambda x: {
                 "全部": "全部", "style": "风格", "emotion": "情绪", "scene": "场景",
-                "language": "语言", "vocal": "人声", "extra": "特色附加", "quality": "品质"
+                "language": "语言", "vocal": "人声", "extra": "特色附加"
             }.get(x, x)
         )
     with col2:
@@ -741,14 +717,13 @@ def render_edit_delete_tag(db, all_tags):
                     except Exception as e:
                         st.error(f"保存失败: {e}")
 
-                if tag["category"] != "quality":  # 品质标签不允许删除
-                    if st.button("🗑️ 删除", key=f"del_{tag['id']}"):
-                        try:
-                            db.delete_tag(tag["id"])
-                            st.success("删除成功！")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"删除失败: {e}")
+                if st.button("🗑️ 删除", key=f"del_{tag['id']}"):
+                    try:
+                        db.delete_tag(tag["id"])
+                        st.success("删除成功！")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"删除失败: {e}")
 
 
 # ==================== 设置页面 ====================

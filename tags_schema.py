@@ -61,10 +61,13 @@ TAG_LIBRARY = {
 
     # ==================== 六、特色附加类 ====================
     "extra": {
-        "intensity": ["低强度（舒缓）", "中强度（适中）", "高强度（动感）", "渐变强度"],
-        "era": ["70年代风格", "80年代风格", "90年代风格", "00年代风格", "10年代风格", "20年代风格（近年风格）"],
-        "feature": ["小众宝藏", "短视频风格", "经典复刻", "实验性", "主流向", "氛围感", "细腻情感", "乡土气息", "爱国主义", "艺术陶冶"],
-        "编曲配器混音": ["键盘solo", "键盘律动", "pad氛围", "吉他solo", "吉他扫弦", "吉他riff", "弦乐组", "弦乐solo", "管乐组", "管乐solo", "民乐融合", "FX", "贝斯律动", "贝斯solo", "FX贝斯", "尤克里里", "大混响", "低频重", "中频饱满", "高频突出", "相位摆放优秀", "808鼓组", "Lo-fi鼓组", "Sub Bass", "复古合成器", "电钢琴", "宇宙Pad", "快速Hi-hat Roll", "梦幻Bell", "Chime层", "温暖Tape饱和", "宽广空间Reverb", "侧链压缩Pump", "明亮空气感高频", "低频轰鸣强化", "复古Lo-fi滤波", "Binaural 3D空间", "Analog温暖压缩", "Loudness最大化", "Sparkle高频点缀", "极简循环", "呼吸式节奏", "频繁Drop", "叙事渐进", "重复Loop变奏", "主题反复", "渐弱淡出", "爆发高潮"]
+        "primary": [],  # 特色附加没有一级标签
+        "secondary": {
+            "强度": ["低强度（舒缓）", "中强度（适中）", "高强度（动感）", "渐变强度"],
+            "年代": ["70年代风格", "80年代风格", "90年代风格", "00年代风格", "10年代风格", "20年代风格（近年风格）"],
+            "特色": ["小众宝藏", "短视频风格", "经典复刻", "实验性", "主流向", "氛围感", "细腻情感", "乡土气息", "爱国主义", "艺术陶冶"],
+            "编曲配器混音": ["键盘solo", "键盘律动", "pad氛围", "吉他solo", "吉他扫弦", "吉他riff", "弦乐组", "弦乐solo", "管乐组", "管乐solo", "民乐融合", "FX", "贝斯律动", "贝斯solo", "FX贝斯", "尤克里里", "大混响", "低频重", "中频饱满", "高频突出", "相位摆放优秀", "808鼓组", "Lo-fi鼓组", "Sub Bass", "复古合成器", "电钢琴", "宇宙Pad", "快速Hi-hat Roll", "梦幻Bell", "Chime层", "温暖Tape饱和", "宽广空间Reverb", "侧链压缩Pump", "明亮空气感高频", "低频轰鸣强化", "复古Lo-fi滤波", "Binaural 3D空间", "Analog温暖压缩", "Loudness最大化", "Sparkle高频点缀", "极简循环", "呼吸式节奏", "频繁Drop", "叙事渐进", "重复Loop变奏", "主题反复", "渐弱淡出", "爆发高潮"]
+        }
     }
 }
 
@@ -117,15 +120,6 @@ def build_tag_music_tool(db=None):
             all_tags.extend(tags)
         return all_tags
 
-    # 品质描述（2026版标准）
-    quality_description = """【必填】音乐品质等级，从以下选项中选择一个：
-
-低品质（基础合格）：调性明确稳定、无音准偏差、旋律流畅；节奏精准稳定、具备主歌+副歌基础结构、时长2-5分钟；人声清晰自然、发音准确率≥90%、无机械失真；配器简洁（2-3种乐器）、混音基础均衡、人声占比40-60%；文本逻辑连贯、押韵率≥70%。
-
-中品质（专业创作质感）：旋律有起伏对比、Hook记忆点突出、和声进行合理；节奏有层次变化、具备完整结构（前奏+主歌+预副歌+副歌+尾奏）；发音准确率≥98%、情感有深度、可适度颤音转音；配器丰富（4-6种乐器）、声部层次清晰、动态范围12-15dB；文本结构清晰、押韵率≥85%、主题有深度。
-
-高品质（逼近商业作品）：旋律创意强、Hook高辨识度、和声复杂高级（七和弦/九和弦/借调）；节奏灵动多变、结构灵活创新；发音准确率≥99%、咬字情感深度绑定、接近专业演唱水准；配器精细创意、混音商业级标准（LUFS -14dB）、动态范围12-18dB；文本文学性强、押韵率≥95%、高度原创有艺术张力。"""
-
     return {
         "type": "function",
         "function": {
@@ -134,16 +128,6 @@ def build_tag_music_tool(db=None):
             "parameters": {
                 "type": "object",
                 "properties": {
-                    # ===== 品质标签（必填）=====
-                    "quality": {
-                        "type": "string",
-                        "description": quality_description
-                    },
-                    "quality_reason": {
-                        "type": "string",
-                        "description": "【必填】品质评价理由，简要说明给出该品质等级的具体依据（30-80字），需包含具体的评判依据，如：旋律、节奏、人声、编曲、混音等方面的具体表现"
-                    },
-
                     # ===== 一级标签（必填，部分可多选）=====
                     "style_primary": {
                         "type": "string",
@@ -188,22 +172,22 @@ def build_tag_music_tool(db=None):
                         "description": "【可选】人声特征，用逗号分隔。可选: " + ", ".join(tag_library["vocal"]["secondary"].get("特征", []))
                     },
 
-                    # ===== 特色附加类 =====
+                    # ===== 特色附加类（二级可选标签）=====
                     "intensity": {
                         "type": "string",
-                        "description": "【可选】音乐强度，从以下选项中选择: " + ", ".join(tag_library["extra"]["intensity"])
+                        "description": "【可选】音乐强度（特色附加-二级标签），从以下选项中选择: " + ", ".join(tag_library["extra"]["secondary"].get("强度", []))
                     },
                     "era": {
                         "type": "string",
-                        "description": "【可选】年代属性，从以下选项中选择: " + ", ".join(tag_library["extra"]["era"])
+                        "description": "【可选】年代属性（特色附加-二级标签），从以下选项中选择: " + ", ".join(tag_library["extra"]["secondary"].get("年代", []))
                     },
                     "feature": {
                         "type": "string",
-                        "description": "【可选】特色定位，从以下选项中选择1-2个，用逗号分隔: " + ", ".join(tag_library["extra"]["feature"])
+                        "description": "【可选】特色定位（特色附加-二级标签），从以下选项中选择1-2个，用逗号分隔: " + ", ".join(tag_library["extra"]["secondary"].get("特色", []))
                     },
                     "arrangement": {
                         "type": "string",
-                        "description": "【可选】编曲配器混音特色，从以下选项中选择1-3个，用逗号分隔: " + ", ".join(tag_library["extra"].get("编曲配器混音", []))
+                        "description": "【可选】编曲配器混音特色（特色附加-二级标签），从以下选项中选择1-3个，用逗号分隔: " + ", ".join(tag_library["extra"]["secondary"].get("编曲配器混音", []))
                     },
 
                     # ===== 其他信息 =====
@@ -217,8 +201,6 @@ def build_tag_music_tool(db=None):
                     }
                 },
                 "required": [
-                    "quality",
-                    "quality_reason",
                     "style_primary",
                     "emotion_primary",
                     "scene_primary",

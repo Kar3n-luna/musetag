@@ -476,8 +476,7 @@ class Database:
                 "scene": {"primary": [], "secondary": {}},
                 "language": [],
                 "vocal": {"primary": [], "secondary": {"类型": [], "特征": []}},
-                "extra": {"intensity": [], "era": [], "feature": [], "编曲配器混音": []},
-                "quality": {"primary": [], "secondary": {}}
+                "extra": {"primary": [], "secondary": {}}
             }
 
             for row in rows:
@@ -490,11 +489,14 @@ class Database:
                 if category == "language":
                     tag_library["language"].append(name)
                 elif category == "extra":
-                    # 动态添加不存在的 key
-                    if level not in tag_library["extra"]:
-                        tag_library["extra"][level] = []
-                    tag_library["extra"][level].append(name)
-                elif category in ["style", "emotion", "scene", "quality"]:
+                    # extra 使用 primary/secondary 结构
+                    if level == "secondary" and parent:
+                        if parent not in tag_library["extra"]["secondary"]:
+                            tag_library["extra"]["secondary"][parent] = []
+                        tag_library["extra"]["secondary"][parent].append(name)
+                    elif level == "primary":
+                        tag_library["extra"]["primary"].append(name)
+                elif category in ["style", "emotion", "scene"]:
                     if level == "primary":
                         tag_library[category]["primary"].append(name)
                     elif level == "secondary" and parent:
@@ -615,27 +617,10 @@ def init_tag_library_to_db(db: Database = None, force: bool = False):
             db.add_tag("vocal", "secondary", child, parent=parent, sort_order=sort_order)
             sort_order += 1
 
-    # 导入特色附加标签
-    for key in ["intensity", "era", "feature"]:
-        if key in TAG_LIBRARY["extra"]:
-            for item in TAG_LIBRARY["extra"][key]:
-                db.add_tag("extra", key, item, sort_order=sort_order)
-                sort_order += 1
-
-    # 导入编曲配器混音特色标签
-    if "编曲配器混音" in TAG_LIBRARY["extra"]:
-        for item in TAG_LIBRARY["extra"]["编曲配器混音"]:
-            db.add_tag("extra", "编曲配器混音", item, sort_order=sort_order)
+    # 导入特色附加标签（二级标签）
+    for parent, items in TAG_LIBRARY["extra"]["secondary"].items():
+        for item in items:
+            db.add_tag("extra", "secondary", item, parent=parent, sort_order=sort_order)
             sort_order += 1
-
-    # 导入品质标签（2026版标准）
-    quality_tags = [
-        ("低品质", "基础合格，满足日常听歌需求。调性明确稳定、节奏精准稳定、人声清晰自然（准确率≥90%）、配器简洁（2-3种乐器）、混音基础均衡、押韵率≥70%"),
-        ("中品质", "细节打磨，具备专业创作质感。旋律有起伏对比、Hook记忆点突出、节奏有层次变化、发音准确率≥98%、配器丰富（4-6种乐器）、动态范围12-15dB、押韵率≥85%"),
-        ("高品质", "专业质感，逼近商业作品。旋律创意强、Hook高辨识度、和声复杂高级、发音准确率≥99%、配器精细创意、混音商业级标准（LUFS -14dB）、押韵率≥95%、高度原创艺术张力"),
-    ]
-    for name, desc in quality_tags:
-        db.add_tag("quality", "primary", name, description=desc, sort_order=sort_order)
-        sort_order += 1
 
     logger.info(f"标签库初始化完成，共 {sort_order} 个标签")
